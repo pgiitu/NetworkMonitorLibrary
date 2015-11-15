@@ -29,27 +29,28 @@ public final class NetworkMonitor {
     }
 
     private static final String TAG = "NetworkApp";
-    private static List<NetworkChangeListener> listeners;
-    private static Activity currentlyAttachedActivity;
-    private static Context context;
-    private static List<Fragment> currentlyAttachedFragments;
-    private static ConnectionType currentConnectionType;
-    private static boolean initialized;
+    private List<NetworkChangeListener> listeners;
+    private Activity currentlyAttachedActivity;
+    private Context context;
+    private List<Fragment> currentlyAttachedFragments;
+    private ConnectionType currentConnectionType;
 
-    private static BroadcastReceiver mConnReceiver = new BroadcastReceiver() {
+    private static NetworkMonitor Instance;
+
+    private BroadcastReceiver mConnReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             Log.d(TAG, "Network connectivity change");
             if (intent.getAction().equals(ConnectivityManager.CONNECTIVITY_ACTION)) {
 
-                ConnectionType newType = getConnectionType(context);
+                ConnectionType newType = Instance.getConnectionType();
                 // check if the connection type changed and the internet connectivity changed
                 if (newType != currentConnectionType
-                        && isConnectionTypeInternet(newType) != isConnectionTypeInternet(currentConnectionType)) {
+                        && isConnectionTypeInternet(newType) != isCurrentConnectionTypeInternet()) {
                     Log.d(TAG, "Network connectivity change: " + currentConnectionType.toString()
                             + "   " + newType.toString());
                     currentConnectionType = newType;
-                    notifyListeners(isConnectionTypeInternet(currentConnectionType));
+                    notifyListeners(isCurrentConnectionTypeInternet());
                     addRemoveConnectionOverlay();
                 }
                 currentConnectionType = newType;
@@ -57,24 +58,27 @@ public final class NetworkMonitor {
         }
     };
 
+    private NetworkMonitor(Context context) {
+        this.context = context.getApplicationContext();
+        context.registerReceiver(mConnReceiver, new IntentFilter(
+                ConnectivityManager.CONNECTIVITY_ACTION));
+        listeners = new ArrayList<>();
+        currentlyAttachedFragments = new ArrayList<>();
+        currentConnectionType = getConnectionType();
+    }
+
     /**
      * Initialize the Network Monitor. This should be the first function called
      *
      * @param ctx
      */
-    public static void initialize(Context ctx) {
-        if (!initialized) {
+    public static synchronized void initialize(Context ctx) {
+        if (Instance == null) {
             if (ctx == null) {
                 throw new IllegalArgumentException(
                         "Context cannot be null. NetworkMonitor cannot be initialized");
             }
-            listeners = new ArrayList<>();
-            currentlyAttachedFragments = new ArrayList<>();
-            context = ctx.getApplicationContext();
-            currentConnectionType = getConnectionType(context);
-            context.registerReceiver(mConnReceiver, new IntentFilter(
-                    ConnectivityManager.CONNECTIVITY_ACTION));
-            initialized = true;
+            Instance = new NetworkMonitor(ctx);
         } else {
             Log.d(TAG, "Trying to initialize the already initialized network monitor");
         }
@@ -84,7 +88,7 @@ public final class NetworkMonitor {
      * function to check if the network monitor has been initialized
      */
     private static void checkIfInitialized() {
-        if (!initialized) {
+        if (Instance == null) {
             throw new IllegalStateException(
                     "NetworkMonitor has not been initialized yet. Please call initialize first");
         }
@@ -102,9 +106,10 @@ public final class NetworkMonitor {
             throw new IllegalArgumentException(
                     "Activity cannot be null. Cannot Attach a null Activity");
         }
-        currentlyAttachedActivity = act;
-        if (!isConnectionTypeInternet(currentConnectionType)) {
-            addRemoveConnectionOverlay(currentlyAttachedActivity, true);
+        Instance.currentlyAttachedActivity = act;
+        // currentlyAttachedActivity = act;
+        if (!Instance.isCurrentConnectionTypeInternet()) {
+            Instance.addRemoveConnectionOverlay(Instance.currentlyAttachedActivity, true);
         }
     }
 
@@ -115,12 +120,12 @@ public final class NetworkMonitor {
             throw new IllegalArgumentException(
                     "Activity cannot be null. Cannot detachActivity a null Activity");
         }
-        addRemoveConnectionOverlay(currentlyAttachedActivity, false);
-        resetActivity();
+        Instance.addRemoveConnectionOverlay(Instance.currentlyAttachedActivity, false);
+        Instance.resetActivity();
     }
 
-    private static void resetActivity() {
-        currentlyAttachedActivity = null;
+    private void resetActivity() {
+        Instance.currentlyAttachedActivity = null;
     }
 
     public static void attachFragment(Fragment fragment) {
@@ -130,9 +135,9 @@ public final class NetworkMonitor {
             throw new IllegalArgumentException(
                     "Fragment cannot be null. Cannot Attach a null Fragment");
         }
-        addFragment(fragment);
-        if (!isConnectionTypeInternet(currentConnectionType)) {
-            addRemoveConnectionOverlay(fragment, true);
+        Instance.addFragment(fragment);
+        if (!Instance.isCurrentConnectionTypeInternet()) {
+            Instance.addRemoveConnectionOverlay(fragment, true);
         }
     }
 
@@ -143,8 +148,8 @@ public final class NetworkMonitor {
             throw new IllegalArgumentException(
                     "Fragment cannot be null. Cannot detachActivity a null Fragment");
         }
-        addRemoveConnectionOverlay(fragment, false);
-        removeFragment(fragment);
+        Instance.addRemoveConnectionOverlay(fragment, false);
+        Instance.removeFragment(fragment);
     }
 
     /**
@@ -152,7 +157,7 @@ public final class NetworkMonitor {
      * 
      * @param fragment
      */
-    private static void removeFragment(Fragment fragment) {
+    private void removeFragment(Fragment fragment) {
         currentlyAttachedFragments.remove(fragment);
     }
 
@@ -161,11 +166,11 @@ public final class NetworkMonitor {
      * 
      * @param fragment
      */
-    private static void addFragment(Fragment fragment) {
+    private void addFragment(Fragment fragment) {
         currentlyAttachedFragments.add(fragment);
     }
 
-    private static void addRemoveConnectionOverlay(Fragment fragment, boolean addOverlay) {
+    private void addRemoveConnectionOverlay(Fragment fragment, boolean addOverlay) {
         if (fragment != null) {
             if (fragment.isAdded() && !fragment.isRemoving() && fragment.getView() != null) {
                 ViewGroup viewGroup = (ViewGroup) fragment.getView();
@@ -176,7 +181,7 @@ public final class NetworkMonitor {
         }
     }
 
-    private static void addRemoveConnectionOverlay(Activity activity, boolean addOverlay) {
+    private void addRemoveConnectionOverlay(Activity activity, boolean addOverlay) {
         if (activity != null) {
             if (!activity.isFinishing()) {
                 final ViewGroup viewGroup =
@@ -188,7 +193,7 @@ public final class NetworkMonitor {
         }
     }
 
-    private static void addRemoveConnectionOverlay(ViewGroup viewGroup, boolean addOverlay,
+    private void addRemoveConnectionOverlay(ViewGroup viewGroup, boolean addOverlay,
             boolean fragment, Context context) {
         View overlay =
                 viewGroup.findViewById(fragment ? R.id.overlay_id_fragment
@@ -224,8 +229,8 @@ public final class NetworkMonitor {
      * function to go though the list of attached fragments and Activity and add or remove the
      * overlay based on network state.
      */
-    private static void addRemoveConnectionOverlay() {
-        final boolean addOverlay = !isConnectionTypeInternet(currentConnectionType);
+    private void addRemoveConnectionOverlay() {
+        final boolean addOverlay = !isCurrentConnectionTypeInternet();
         for (Fragment fragment : currentlyAttachedFragments) {
             addRemoveConnectionOverlay(fragment, addOverlay);
         }
@@ -240,7 +245,7 @@ public final class NetworkMonitor {
     public static void addOnNetworkChangeListener(NetworkChangeListener networkChangeListener) {
         checkIfInitialized();
         if (networkChangeListener != null) {
-            listeners.add(networkChangeListener);
+            Instance.listeners.add(networkChangeListener);
         } else {
             Log.e(TAG, "Trying to add a null NetworkChangeListener");
         }
@@ -253,7 +258,7 @@ public final class NetworkMonitor {
      */
     public static void removeNetworkChangeListener(NetworkChangeListener networkChangeListener) {
         checkIfInitialized();
-        listeners.remove(networkChangeListener);
+        Instance.listeners.remove(networkChangeListener);
     }
 
     /**
@@ -261,7 +266,7 @@ public final class NetworkMonitor {
      * 
      * @param connected
      */
-    public static void notifyListeners(boolean connected) {
+    private void notifyListeners(boolean connected) {
 
         for (NetworkChangeListener listener : listeners) {
             listener.onConnectivityChanged(connected);
@@ -269,10 +274,9 @@ public final class NetworkMonitor {
     }
 
     /**
-     * @param context
      * @return the current connection type based on the currently Active networkInfo
      */
-    private static ConnectionType getConnectionType(Context context) {
+    private ConnectionType getConnectionType() {
         ConnectivityManager connectivityManager =
                 (ConnectivityManager) context.getApplicationContext().getSystemService(
                         Context.CONNECTIVITY_SERVICE);
@@ -305,11 +309,14 @@ public final class NetworkMonitor {
      * Check if the the connection type belongs to the category of NO_NETWORK or
      * NETWORK(WIFI,MOBILE)
      * 
-     * @param type
      * @return
      */
-    private static boolean isConnectionTypeInternet(ConnectionType type) {
+    private boolean isConnectionTypeInternet(ConnectionType type) {
         return (type == ConnectionType.CONNECTION_MOBILE_DATA || type == ConnectionType.CONNECTION_WIFI);
+    }
+
+    private boolean isCurrentConnectionTypeInternet() {
+        return isConnectionTypeInternet(Instance.currentConnectionType);
     }
 
     /**
