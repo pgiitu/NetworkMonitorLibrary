@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="overlay_id_fragment" type="id" />
+    <item name="overlay_id_activity" type="id" />
+    <dimen name="overlay_padding">10dp</dimen>
+</resources>
