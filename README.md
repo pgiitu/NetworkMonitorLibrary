@@ -13,6 +13,9 @@ Features:
 
 Usage:
 
+Add `<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />` to the manifest file.
+
+
 The first call to the Library must be 
 
 `NetworkMonitor.initialize(context);`
