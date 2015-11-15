@@ -57,7 +57,7 @@ Here is a sample activity showing the use:
 
     }
     
-Things to Take care of:
+Note:
     
 1. Since right now the library can be attached with a single activity you should attch the activity in the `onResume()` and detach it in `onPause()`.
 2. The library as of now simply adds a TextView with the message "Network not available. Looking for network..." in the root view of the activity and fragment irrespective of the type of ViewGroup currently inflated in the fragment.
